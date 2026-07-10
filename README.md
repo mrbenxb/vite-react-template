@@ -5,10 +5,12 @@ Mobile-first animal racing management prototype built with React, TypeScript, an
 ## Prototype scope
 
 - Six animated animal racers
-- Colored placeholder environment and four course segments
-- Live race simulation, stamina, placement, and finish order
+- Contra-style side-on race camera with a long scrolling course
+- Four terrain sections: meadow, mud, ridge, and home stretch
+- Live race simulation with stamina, placement, and finish order
 - Player-selected managed racer
-- Three timed tactical decisions during each race
+- Three tactical calls per racer: Push, Settle, and Draft
+- AI opponents use the same three decision windows, durations, stamina costs, and speed effects as the player
 - Responsive portrait-first layout
 
 ## Run locally
