@@ -93,6 +93,11 @@
 
 .tactic-dock.ready .tactic-buttons.free-use button:not(:disabled) {
   box-shadow: 0 0 0 1px rgba(217,242,116,.12);
+  animation: tactic-ready-pulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes tactic-ready-pulse {
+  to { border-color: rgba(217,242,116,.68); }
 }
 
 @media (max-width: 580px) {
