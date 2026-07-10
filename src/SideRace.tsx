@@ -46,10 +46,21 @@ type Decision = {
   message: string
 } | null
 
+type WorldChunk = {
+  key: string
+  theme: Segment
+  label?: string
+  start: number
+  end: number
+}
+
 const RACE_DISTANCE = 1200
-const VIEW_METERS = 300
-const CAMERA_LEAD = 105
-const WORLD_MARGIN = 36
+const VIEW_METERS = 320
+const CAMERA_ANCHOR = 0.35
+const WORLD_PAD = 250
+const WORLD_END = RACE_DISTANCE + WORLD_PAD
+const DEPTH_Y = [51, 58, 65, 72, 79, 86]
+const DEPTH_SCALE = [0.78, 0.84, 0.9, 0.96, 1.02, 1.08]
 
 const RACERS: RacerTemplate[] = [
   {
@@ -91,6 +102,12 @@ const SEGMENTS: { key: Segment; label: string; start: number; end: number }[] = 
   { key: 'sprint', label: 'HOME STRETCH', start: 900, end: 1200 },
 ]
 
+const WORLD_CHUNKS: WorldChunk[] = [
+  { key: 'lead-in', theme: 'meadow', start: -WORLD_PAD, end: 0 },
+  ...SEGMENTS.map((segment) => ({ ...segment, theme: segment.key })),
+  { key: 'runout', theme: 'sprint', start: RACE_DISTANCE, end: WORLD_END },
+]
+
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 const getSegment = (distance: number): Segment => {
@@ -107,8 +124,9 @@ const ordinal = (value: number) => {
 }
 
 const makeRaceState = (selectedId: string): RacerState[] => {
-  const depthSlots = [0, 1, 3, 4, 5]
+  const depthSlots = [0, 1, 2, 4, 5]
   let otherIndex = 0
+
   return RACERS.map((racer) => ({
     ...racer,
     distance: 0,
@@ -117,7 +135,7 @@ const makeRaceState = (selectedId: string): RacerState[] => {
     finishedAt: null,
     tactic: null,
     tacticUntil: 0,
-    depth: racer.id === selectedId ? 2 : depthSlots[otherIndex++],
+    depth: racer.id === selectedId ? 3 : depthSlots[otherIndex++],
   }))
 }
 
@@ -132,6 +150,7 @@ function SideRace() {
 
   const raceRef = useRef<RacerState[]>(makeRaceState('deer'))
   const phaseRef = useRef<RacePhase>('setup')
+  const decisionRef = useRef<Decision>(null)
   const startTimeRef = useRef(0)
   const previousTimeRef = useRef(0)
   const lastPaintRef = useRef(0)
@@ -147,8 +166,11 @@ function SideRace() {
   const selected = racers.find((racer) => racer.id === selectedId) ?? racers[0]
   const selectedPlace = ranking.findIndex((racer) => racer.id === selectedId) + 1
   const selectedSegment = getSegment(selected.distance)
-  const cameraLeft = clamp(selected.distance - CAMERA_LEAD, -WORLD_MARGIN, RACE_DISTANCE - VIEW_METERS + WORLD_MARGIN)
-  const cameraProgress = clamp((cameraLeft + WORLD_MARGIN) / (RACE_DISTANCE - VIEW_METERS + WORLD_MARGIN * 2), 0, 1)
+  const cameraLeft = clamp(
+    selected.distance - VIEW_METERS * CAMERA_ANCHOR,
+    -WORLD_PAD,
+    WORLD_END - VIEW_METERS,
+  )
   const finishX = ((RACE_DISTANCE - cameraLeft) / VIEW_METERS) * 100
 
   const beginRace = useCallback(() => {
@@ -159,13 +181,15 @@ function SideRace() {
     phaseRef.current = 'countdown'
     setCountdown(3)
     setDecision(null)
+    decisionRef.current = null
     setRaceClock(0)
     checkpointRef.current.clear()
-    setCommentary(`${RACERS.find((racer) => racer.id === selectedId)?.name} steps into the front camera group.`)
+    setCommentary(`${RACERS.find((racer) => racer.id === selectedId)?.name} moves into the camera group.`)
   }, [selectedId])
 
   useEffect(() => {
     if (phase !== 'countdown') return
+
     const interval = window.setInterval(() => {
       setCountdown((value) => {
         if (value <= 1) {
@@ -180,6 +204,7 @@ function SideRace() {
         return value - 1
       })
     }, 700)
+
     return () => window.clearInterval(interval)
   }, [phase])
 
@@ -188,7 +213,10 @@ function SideRace() {
     raceRef.current = raceRef.current.map((racer) => racer.id === selectedId
       ? { ...racer, tactic, tacticUntil: now + (tactic === 'surge' ? 4200 : 5200) }
       : racer)
+
     setDecision(null)
+    decisionRef.current = null
+
     const copy: Record<Tactic, string> = {
       surge: 'You call for a surge. The stride opens and the field starts moving backward.',
       settle: 'You ask for control. Your racer eases off and saves energy for later.',
@@ -225,6 +253,7 @@ function SideRace() {
         let drainMultiplier = 1
         let regen = 0
         const tacticActive = racer.tacticUntil > now
+
         if (tacticActive && racer.tactic === 'surge') {
           tacticBoost = 2.2 + racer.burst * 0.012
           drainMultiplier = 1.9
@@ -240,7 +269,17 @@ function SideRace() {
           drainMultiplier = target ? 0.42 : 0.75
         }
 
-        const rawSpeed = 15.4 + racer.speed * 0.12 + affinityBonus + pressureBonus + wolfPack + bearFinish + tacticBoost + strideNoise - mudPenalty - hillPenalty
+        const rawSpeed = 15.4
+          + racer.speed * 0.12
+          + affinityBonus
+          + pressureBonus
+          + wolfPack
+          + bearFinish
+          + tacticBoost
+          + strideNoise
+          - mudPenalty
+          - hillPenalty
+
         const velocity = Math.max(10.5, rawSpeed * energyFactor)
         const baseDrain = 0.9 + velocity * 0.055 + (segment === 'hill' ? 0.45 : 0)
         const energy = clamp(racer.energy - baseDrain * drainMultiplier * dt + regen * dt, 0, 100)
@@ -260,13 +299,15 @@ function SideRace() {
       raceRef.current = next
       const player = next.find((racer) => racer.id === selectedId)!
       const reached = [255, 590, 920].find((point) => player.distance >= point && !checkpointRef.current.has(point))
-      if (reached !== undefined) {
+
+      if (reached !== undefined && !decisionRef.current) {
         checkpointRef.current.add(reached)
         const prompts: Record<number, NonNullable<Decision>> = {
           255: { checkpoint: 255, title: 'Mud ahead', message: 'The grass ends in a few strides. Decide before everyone bunches up.' },
           590: { checkpoint: 590, title: 'The ridge rises', message: 'The climb is long enough to punish an early attack.' },
           920: { checkpoint: 920, title: 'Home stretch', message: 'The finish is finally in sight. This is your last meaningful call.' },
         }
+        decisionRef.current = prompts[reached]
         setDecision(prompts[reached])
       }
 
@@ -321,29 +362,35 @@ function SideRace() {
           </div>
 
           <div className={`race-scene scene-${selectedSegment}`}>
-            <div className="world-layer sky-world" style={{ transform: `translateX(-${cameraProgress * 75}%)` }}>
-              {SEGMENTS.map((segment) => (
-                <section className={`world-segment ${segment.key}`} key={segment.key}>
-                  <span className="sun" />
-                  <span className="cloud cloud-a" />
-                  <span className="cloud cloud-b" />
-                  <div className="far-hills" />
-                  <div className="near-hills" />
-                  <div className="segment-sign">{segment.label}</div>
-                </section>
-              ))}
-            </div>
+            <div className="world-stage">
+              {WORLD_CHUNKS.map((chunk) => {
+                const left = ((chunk.start - cameraLeft) / VIEW_METERS) * 100
+                const width = ((chunk.end - chunk.start) / VIEW_METERS) * 100
+                const visible = left < 115 && left + width > -15
 
-            <div className="world-layer ground-world" style={{ transform: `translateX(-${cameraProgress * 75}%)` }}>
-              {SEGMENTS.map((segment) => (
-                <section className={`ground-segment ${segment.key}`} key={segment.key}>
-                  <div className="terrain-detail" />
-                </section>
-              ))}
+                if (!visible) return null
+
+                return (
+                  <section
+                    className={`world-chunk theme-${chunk.theme}`}
+                    key={chunk.key}
+                    style={{ left: `${left}%`, width: `${width}%` }}
+                  >
+                    <div className="sky-tone" />
+                    <span className="sun" />
+                    <span className="cloud cloud-a" />
+                    <span className="cloud cloud-b" />
+                    <div className="far-land" />
+                    <div className="near-land" />
+                    <div className="track-ground"><div className="terrain-detail" /></div>
+                    {chunk.label && <div className="segment-sign">{chunk.label}</div>}
+                  </section>
+                )
+              })}
             </div>
 
             <div className="speed-lines" />
-            <div className="camera-reticle"><span>YOU</span></div>
+            <div className="camera-guide" />
 
             {finishX > -8 && finishX < 108 && (
               <div className="finish-gate" style={{ left: `${finishX}%` }}>
@@ -359,19 +406,26 @@ function SideRace() {
                 const spriteSheet = moving ? racer.sprite.run : racer.sprite.idle
                 const frames = moving ? racer.sprite.runFrames : racer.sprite.idleFrames
                 const duration = moving ? Math.max(.28, .72 - racer.velocity * .012) : 1.4
-                const baseY = 56 + racer.depth * 5.8
-                const hillLift = getSegment(racer.distance) === 'hill'
-                  ? Math.sin(clamp((racer.distance - 600) / 300, 0, 1) * Math.PI) * 10
-                  : 0
-                const visible = screenX > -20 && screenX < 120
+                const visible = screenX > -18 && screenX < 118
+                const isManaged = racer.id === selectedId
+                const perspectiveScale = DEPTH_SCALE[racer.depth]
 
                 return (
                   <div
-                    className={`runner ${racer.id === selectedId ? 'managed' : ''} ${visible ? '' : 'offscreen'}`}
+                    className={`runner ${isManaged ? 'managed' : ''} ${visible ? '' : 'offscreen'}`}
                     key={racer.id}
-                    style={{ left: `${screenX}%`, top: `calc(${baseY}% - ${hillLift}px)`, zIndex: 20 + racer.depth }}
+                    style={{
+                      left: `${screenX}%`,
+                      top: `${DEPTH_Y[racer.depth]}%`,
+                      zIndex: 20 + racer.depth,
+                      ['--perspective-scale' as string]: perspectiveScale,
+                    }}
                   >
-                    <div className="runner-tag"><b>{rank}</b><span>{racer.name}</span></div>
+                    {isManaged ? (
+                      <div className="managed-tag"><b>{rank}</b><span>YOU · {racer.name}</span></div>
+                    ) : (
+                      <div className="rival-rank">{rank}</div>
+                    )}
                     <div className="animal-shadow" />
                     <div className="sprite-flip">
                       <div
