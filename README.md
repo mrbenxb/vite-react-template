@@ -10,7 +10,9 @@ Mobile-first animal racing management prototype built with React, TypeScript, an
 - Live race simulation with stamina, placement, and finish order
 - Player-selected managed racer
 - Reusable Tactic Gauge with Push, Settle, and Draft
-- First tactic exchange happens simultaneously when the field reaches the first terrain change
+- Tactics unlock for the entire field at the first terrain change
+- The race never pauses for a tactical decision
+- The player may hold a full gauge and use it at any chosen moment
 - Gauge recharge is driven by Nerve
 - Push strength scales with Burst
 - Settle recovery scales with Stamina
