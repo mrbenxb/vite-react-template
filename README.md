@@ -9,8 +9,13 @@ Mobile-first animal racing management prototype built with React, TypeScript, an
 - Four terrain sections: meadow, mud, ridge, and home stretch
 - Live race simulation with stamina, placement, and finish order
 - Player-selected managed racer
-- Three tactical calls per racer: Push, Settle, and Draft
-- AI opponents use the same three decision windows, durations, stamina costs, and speed effects as the player
+- Reusable Tactic Gauge with Push, Settle, and Draft
+- First tactic exchange happens simultaneously when the field reaches the first terrain change
+- Gauge recharge is driven by Nerve
+- Push strength scales with Burst
+- Settle recovery scales with Stamina
+- Draft efficiency and slingshot scale with Nerve and nearby positioning
+- AI opponents use the exact same gauge, effects, costs, and rules as the player
 - Responsive portrait-first layout
 
 ## Run locally
