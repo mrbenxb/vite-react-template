@@ -1,0 +1,22 @@
+.ground-tick {
+  position: absolute;
+  z-index: 9;
+  top: calc(67% + 8px);
+  width: 13px;
+  height: 3px;
+  transform: translateX(-50%) skewX(-24deg);
+  border-radius: 2px;
+  background: rgba(255,255,255,.32);
+  box-shadow: 0 1px 0 rgba(0,0,0,.12);
+  pointer-events: none;
+}
+
+.race-animal.managed {
+  will-change: left;
+}
+
+@media (max-width: 580px) {
+  .ground-tick {
+    width: 11px;
+  }
+}

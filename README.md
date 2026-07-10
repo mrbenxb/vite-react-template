@@ -5,10 +5,19 @@ Mobile-first animal racing management prototype built with React, TypeScript, an
 ## Prototype scope
 
 - Six animated animal racers
-- Colored placeholder environment and four course segments
-- Live race simulation, stamina, placement, and finish order
+- Contra-style side-on race camera with a long scrolling course
+- Four terrain sections: meadow, mud, ridge, and home stretch
+- Live race simulation with stamina, placement, and finish order
 - Player-selected managed racer
-- Three timed tactical decisions during each race
+- Reusable Tactic Gauge with Push, Settle, and Draft
+- Tactics unlock for the entire field at the first terrain change
+- The race never pauses for a tactical decision
+- The player may hold a full gauge and use it at any chosen moment
+- Gauge recharge is driven by Nerve
+- Push strength scales with Burst
+- Settle recovery scales with Stamina
+- Draft efficiency and slingshot scale with Nerve and nearby positioning
+- AI opponents use the exact same gauge, effects, costs, and rules as the player
 - Responsive portrait-first layout
 
 ## Run locally
