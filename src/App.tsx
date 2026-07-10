@@ -1,1 +1,1 @@
-export { default } from './SideRace'
+export { default } from './ContraRace'
