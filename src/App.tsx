@@ -1,1 +1,1 @@
-export { default } from './GaugeRace'
+export { default } from './FreeTacticRace'
