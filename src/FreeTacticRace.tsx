@@ -24,6 +24,7 @@ type RacerTemplate = {
   frameHeight: number
   idleFrames: number
   runFrames: number
+  strideMeters: number
 }
 
 type Racer = RacerTemplate & {
@@ -48,9 +49,11 @@ const RACE_DISTANCE = 1200
 const VIEW_METERS = 150
 const CAMERA_ANCHOR = 0.34
 const WORLD_PAD = 180
+const INITIAL_CAMERA_LEFT = -VIEW_METERS * CAMERA_ANCHOR
 const FIRST_SURFACE_CHANGE = 300
 const TRACK_OFFSETS = [18, 11, 4, -4, -11, -18]
 const MARKERS = Array.from({ length: 11 }, (_, index) => (index + 1) * 100)
+const GROUND_TICKS = Array.from({ length: 59 }, (_, index) => (index + 1) * 20)
 
 const TACTIC_DURATION_MS: Record<Tactic, number> = {
   surge: 5600,
@@ -69,31 +72,37 @@ const RACERS: RacerTemplate[] = [
     id: 'deer', name: 'Atlas', species: 'Deer', number: 1, accent: '#f6c453',
     role: 'Long-stride favorite', speed: 91, stamina: 78, burst: 77, nerve: 82, affinity: 'meadow',
     idle: SPRITES.deerIdle, run: SPRITES.deerRun, frameWidth: 72, frameHeight: 52, idleFrames: 10, runFrames: 6,
+    strideMeters: 10.4,
   },
   {
     id: 'fox', name: 'Cinder', species: 'Fox', number: 2, accent: '#ff785a',
     role: 'Explosive lane hunter', speed: 86, stamina: 70, burst: 94, nerve: 76, affinity: 'sprint',
     idle: SPRITES.foxIdle, run: SPRITES.foxRun, frameWidth: 64, frameHeight: 36, idleFrames: 6, runFrames: 6,
+    strideMeters: 7.4,
   },
   {
     id: 'wolf', name: 'Fang', species: 'Wolf', number: 3, accent: '#91a7ff',
     role: 'Relentless pack racer', speed: 84, stamina: 84, burst: 82, nerve: 91, affinity: 'hill',
     idle: SPRITES.wolfWalk, run: SPRITES.wolfRun, frameWidth: 64, frameHeight: 40, idleFrames: 8, runFrames: 6,
+    strideMeters: 8.5,
   },
   {
     id: 'boar', name: 'Moss', species: 'Boar', number: 4, accent: '#75cf91',
     role: 'Mud-track bruiser', speed: 74, stamina: 92, burst: 66, nerve: 88, affinity: 'mud',
     idle: SPRITES.boarIdle, run: SPRITES.boarRun, frameWidth: 64, frameHeight: 40, idleFrames: 8, runFrames: 6,
+    strideMeters: 6.8,
   },
   {
     id: 'rabbit', name: 'Pip', species: 'Rabbit', number: 5, accent: '#ff9dc9',
     role: 'Tiny all-out sprinter', speed: 83, stamina: 58, burst: 99, nerve: 70, affinity: 'sprint',
     idle: SPRITES.rabbitIdle, run: SPRITES.rabbitHop, frameWidth: 64, frameHeight: 26, idleFrames: 5, runFrames: 5,
+    strideMeters: 5.2,
   },
   {
     id: 'bear', name: 'Bramble', species: 'Bear', number: 6, accent: '#d69b72',
     role: 'Heavy late-race engine', speed: 70, stamina: 98, burst: 61, nerve: 95, affinity: 'hill',
     idle: SPRITES.bearIdle, run: SPRITES.bearRun, frameWidth: 64, frameHeight: 33, idleFrames: 12, runFrames: 5,
+    strideMeters: 7.7,
   },
 ]
 
@@ -180,6 +189,7 @@ function FreeTacticRace() {
   const [countdown, setCountdown] = useState(3)
   const [raceClock, setRaceClock] = useState(0)
   const [commentary, setCommentary] = useState('Choose your racer, then enter the Wildline Cup.')
+  const [cameraLeft, setCameraLeft] = useState(INITIAL_CAMERA_LEFT)
 
   const raceRef = useRef<Racer[]>(makeRace('deer'))
   const phaseRef = useRef<Phase>('setup')
@@ -188,6 +198,7 @@ function FreeTacticRace() {
   const lastPaintRef = useRef(0)
   const lastAiCommentRef = useRef(0)
   const tacticsUnlockedRef = useRef(false)
+  const cameraLeftRef = useRef(INITIAL_CAMERA_LEFT)
 
   const ranking = useMemo(() => [...racers].sort((a, b) => {
     if (a.finishedAt !== null && b.finishedAt !== null) return a.finishedAt - b.finishedAt
@@ -198,11 +209,6 @@ function FreeTacticRace() {
 
   const selected = racers.find((racer) => racer.id === selectedId) ?? racers[0]
   const selectedPlace = ranking.findIndex((racer) => racer.id === selectedId) + 1
-  const cameraLeft = clamp(
-    selected.distance - VIEW_METERS * CAMERA_ANCHOR,
-    -WORLD_PAD,
-    RACE_DISTANCE + WORLD_PAD - VIEW_METERS,
-  )
 
   const tacticReady = phase === 'racing'
     && selected.tacticsUnlocked
@@ -222,6 +228,8 @@ function FreeTacticRace() {
     raceRef.current = fresh
     setRacers(fresh)
     setRaceClock(0)
+    cameraLeftRef.current = INITIAL_CAMERA_LEFT
+    setCameraLeft(INITIAL_CAMERA_LEFT)
     tacticsUnlockedRef.current = false
     lastAiCommentRef.current = 0
     setCountdown(3)
@@ -384,6 +392,23 @@ function FreeTacticRace() {
         setCommentary(describeAiCall(nearby))
       }
 
+      const targetCameraLeft = clamp(
+        player.distance - VIEW_METERS * CAMERA_ANCHOR,
+        -WORLD_PAD,
+        RACE_DISTANCE + WORLD_PAD - VIEW_METERS,
+      )
+      const cameraFollowSpeed = player.tactic === 'surge'
+        ? 1.45
+        : player.tactic === 'settle'
+          ? 3.4
+          : 2.25
+      cameraLeftRef.current += (targetCameraLeft - cameraLeftRef.current) * clamp(dt * cameraFollowSpeed, 0, 1)
+      cameraLeftRef.current = clamp(
+        cameraLeftRef.current,
+        -WORLD_PAD,
+        RACE_DISTANCE + WORLD_PAD - VIEW_METERS,
+      )
+
       raceRef.current = next
 
       if (next.every((racer) => racer.finishedAt !== null)) {
@@ -399,6 +424,7 @@ function FreeTacticRace() {
       if (now - lastPaintRef.current > 42) {
         lastPaintRef.current = now
         setRacers([...next])
+        setCameraLeft(cameraLeftRef.current)
         setRaceClock((now - startTimeRef.current) / 1000)
       }
 
@@ -462,6 +488,12 @@ function FreeTacticRace() {
               })}
             </div>
 
+            {GROUND_TICKS.map((tick) => {
+              const x = ((tick - cameraLeft) / VIEW_METERS) * 100
+              if (x < -3 || x > 103) return null
+              return <div className="ground-tick" key={tick} style={{ left: `${x}%` }} />
+            })}
+
             {MARKERS.map((marker) => {
               const x = ((marker - cameraLeft) / VIEW_METERS) * 100
               if (x < -5 || x > 105) return null
@@ -480,7 +512,10 @@ function FreeTacticRace() {
                 const moving = phase === 'racing'
                 const frames = moving ? racer.runFrames : racer.idleFrames
                 const sprite = moving ? racer.run : racer.idle
-                const duration = moving ? clamp(10.5 / Math.max(racer.velocity, 1), 0.42, 0.86) : 1.45
+                const rawCycleDuration = racer.strideMeters / Math.max(racer.velocity, 1)
+                const duration = moving
+                  ? Math.round(clamp(rawCycleDuration, 0.34, 0.92) * 20) / 20
+                  : 1.45
                 const rank = ranking.findIndex((entry) => entry.id === racer.id) + 1
                 const style = {
                   left: `${x}%`,
@@ -553,6 +588,8 @@ function FreeTacticRace() {
                 const fresh = makeRace(racer.id)
                 raceRef.current = fresh
                 setRacers(fresh)
+                cameraLeftRef.current = INITIAL_CAMERA_LEFT
+                setCameraLeft(INITIAL_CAMERA_LEFT)
               }}><span>{racer.number}</span><b>{racer.name}</b><small>{racer.affinity}</small></button>)}
             </div>}
 
