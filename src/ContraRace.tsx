@@ -41,12 +41,24 @@ type Decision = {
   message: string
 } | null
 
+type AiCall = {
+  name: string
+  tactic: Tactic
+  distance: number
+}
+
 const RACE_DISTANCE = 1200
 const VIEW_METERS = 150
 const CAMERA_ANCHOR = 0.34
 const WORLD_PAD = 180
 const TRACK_OFFSETS = [18, 11, 4, -4, -11, -18]
 const MARKERS = Array.from({ length: 11 }, (_, index) => (index + 1) * 100)
+const DECISION_POINTS = [280, 620, 930] as const
+const TACTIC_DURATION_MS: Record<Tactic, number> = {
+  surge: 4300,
+  settle: 5200,
+  draft: 5200,
+}
 
 const RACERS: RacerTemplate[] = [
   {
@@ -108,6 +120,37 @@ const ordinal = (value: number) => {
   return `${value}${suffix}`
 }
 
+const chooseAiTactic = (racer: Racer, ranking: Racer[], checkpoint: number): Tactic => {
+  const rankIndex = ranking.findIndex((entry) => entry.id === racer.id)
+  const nearestAhead = ranking
+    .filter((entry) => entry.distance > racer.distance)
+    .sort((a, b) => a.distance - b.distance)[0]
+  const gapAhead = nearestAhead ? nearestAhead.distance - racer.distance : Number.POSITIVE_INFINITY
+  const finalWindow = checkpoint >= 900
+
+  if (racer.energy <= (finalWindow ? 26 : 42)) return 'settle'
+
+  if (finalWindow) {
+    if (nearestAhead && gapAhead <= 18 && racer.energy < 58) return 'draft'
+    return 'surge'
+  }
+
+  if (racer.id === 'wolf' && nearestAhead && gapAhead <= 22) return 'draft'
+  if ((racer.id === 'boar' || racer.id === 'bear') && racer.energy < 70) return 'settle'
+  if ((racer.id === 'fox' || racer.id === 'rabbit') && racer.energy >= 54) return 'surge'
+  if (nearestAhead && gapAhead <= 16) return 'draft'
+  if (rankIndex >= 3 && racer.energy >= 50) return 'surge'
+  if (racer.energy < 62) return 'settle'
+
+  return (racer.number + checkpoint / 10) % 2 === 0 ? 'surge' : 'draft'
+}
+
+const describeAiCall = ({ name, tactic }: AiCall) => {
+  if (tactic === 'surge') return `${name} launches a push and starts closing ground.`
+  if (tactic === 'settle') return `${name} settles the pace to protect stamina.`
+  return `${name} tucks into a draft behind the nearest rival.`
+}
+
 const makeRace = (selectedId: string): Racer[] => {
   const openSlots = [0, 1, 3, 4, 5]
   let slotIndex = 0
@@ -139,7 +182,9 @@ function ContraRace() {
   const previousTimeRef = useRef(0)
   const startTimeRef = useRef(0)
   const lastPaintRef = useRef(0)
+  const lastAiCommentRef = useRef(0)
   const checkpointRef = useRef(new Set<number>())
+  const aiCheckpointRef = useRef(new Set<string>())
 
   const ranking = useMemo(() => [...racers].sort((a, b) => {
     if (a.finishedAt !== null && b.finishedAt !== null) return a.finishedAt - b.finishedAt
@@ -164,6 +209,8 @@ function ContraRace() {
     setDecision(null)
     decisionRef.current = null
     checkpointRef.current.clear()
+    aiCheckpointRef.current.clear()
+    lastAiCommentRef.current = 0
     setCountdown(3)
     setPhase('countdown')
     phaseRef.current = 'countdown'
@@ -181,7 +228,7 @@ function ContraRace() {
           setPhase('racing')
           startTimeRef.current = performance.now()
           previousTimeRef.current = performance.now()
-          setCommentary('They are off! The camera locks onto your racer.')
+          setCommentary('They are off! Every racer has the same three tactical calls.')
           return 0
         }
         return value - 1
@@ -194,7 +241,7 @@ function ContraRace() {
   const chooseTactic = (tactic: Tactic) => {
     const now = performance.now()
     raceRef.current = raceRef.current.map((racer) => racer.id === selectedId
-      ? { ...racer, tactic, tacticUntil: now + (tactic === 'surge' ? 4300 : 5200) }
+      ? { ...racer, tactic, tacticUntil: now + TACTIC_DURATION_MS[tactic] }
       : racer)
 
     const text: Record<Tactic, string> = {
@@ -218,7 +265,7 @@ function ContraRace() {
       const current = raceRef.current
       const liveRanking = [...current].sort((a, b) => b.distance - a.distance)
 
-      const next = current.map((racer) => {
+      let next = current.map((racer) => {
         if (racer.finishedAt !== null) return racer
 
         const segment = getSegment(racer.distance)
@@ -279,9 +326,34 @@ function ContraRace() {
         }
       })
 
+      const updatedRanking = [...next].sort((a, b) => b.distance - a.distance)
+      const aiCalls: AiCall[] = []
+
+      next = next.map((racer) => {
+        if (racer.id === selectedId || racer.finishedAt !== null) return racer
+
+        const checkpoint = DECISION_POINTS.find((point) => {
+          const key = `${racer.id}:${point}`
+          return racer.distance >= point && !aiCheckpointRef.current.has(key)
+        })
+
+        if (checkpoint === undefined) return racer
+
+        aiCheckpointRef.current.add(`${racer.id}:${checkpoint}`)
+        const tactic = chooseAiTactic(racer, updatedRanking, checkpoint)
+        aiCalls.push({ name: racer.name, tactic, distance: racer.distance })
+
+        return {
+          ...racer,
+          tactic,
+          tacticUntil: now + TACTIC_DURATION_MS[tactic],
+        }
+      })
+
       raceRef.current = next
       const player = next.find((racer) => racer.id === selectedId)!
-      const checkpoint = [280, 620, 930].find((point) => player.distance >= point && !checkpointRef.current.has(point))
+      const checkpoint = DECISION_POINTS.find((point) => player.distance >= point && !checkpointRef.current.has(point))
+      let playerPromptOpened = false
 
       if (checkpoint !== undefined && !decisionRef.current) {
         checkpointRef.current.add(checkpoint)
@@ -292,6 +364,13 @@ function ContraRace() {
         }
         decisionRef.current = prompts[checkpoint]
         setDecision(prompts[checkpoint])
+        playerPromptOpened = true
+      }
+
+      if (!playerPromptOpened && !decisionRef.current && aiCalls.length > 0 && now - lastAiCommentRef.current > 2200) {
+        const nearbyCall = aiCalls.find((call) => Math.abs(call.distance - player.distance) <= VIEW_METERS * 0.7) ?? aiCalls[0]
+        lastAiCommentRef.current = now
+        setCommentary(describeAiCall(nearbyCall))
       }
 
       if (next.every((racer) => racer.finishedAt !== null)) {
@@ -415,7 +494,7 @@ function ContraRace() {
 
         {decision && phase === 'racing' ? (
           <section className="decision-card">
-            <div><small>LIVE MANAGER CALL · RACE CONTINUES</small><h2>{decision.title}</h2><p>{decision.message}</p></div>
+            <div><small>LIVE MANAGER CALL · EVERY RACER GETS THE SAME 3 CALLS</small><h2>{decision.title}</h2><p>{decision.message}</p></div>
             <div className="tactic-buttons">
               <button onClick={() => chooseTactic('surge')}><b>PUSH</b><span>Speed now · heavy drain</span></button>
               <button onClick={() => chooseTactic('settle')}><b>SETTLE</b><span>Recover · lose ground</span></button>
