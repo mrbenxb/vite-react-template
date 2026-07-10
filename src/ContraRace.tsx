@@ -59,6 +59,11 @@ const TACTIC_DURATION_MS: Record<Tactic, number> = {
   settle: 5200,
   draft: 5200,
 }
+const TACTIC_LABEL: Record<Tactic, string> = {
+  surge: 'PUSH',
+  settle: 'SETTLE',
+  draft: 'DRAFT',
+}
 
 const RACERS: RacerTemplate[] = [
   {
@@ -479,7 +484,7 @@ function ContraRace() {
                         ['--sheet-offset' as string]: `-${racer.frameWidth * frames}px`,
                       } as CSSProperties} />
                     </div>
-                    {racer.tactic && <span className={`tactic ${racer.tactic}`}>{racer.tactic.toUpperCase()}</span>}
+                    {racer.tactic && <span className={`tactic ${racer.tactic}`}>{TACTIC_LABEL[racer.tactic]}</span>}
                   </div>
                 )
               })}
